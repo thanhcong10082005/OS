@@ -22,7 +22,7 @@
  #include <stdio.h>
  #include <pthread.h>
  
- //static pthread_mutex_t mmvm_lock = PTHREAD_MUTEX_INITIALIZER;
+ static pthread_mutex_t mmvm_lock = PTHREAD_MUTEX_INITIALIZER;
  
  /*enlist_vm_freerg_list - add new rg to freerg_list
   *@mm: memory region
@@ -68,91 +68,51 @@
   */
  int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr)
  {
+
    /*Allocate at the toproof */
-   struct vm_rg_struct rgnode;
-   //int inc_limit_ret; // new sbrk
+  struct vm_rg_struct rgnode;
+
+  /* TODO: commit the vmaid */
+  // rgnode.vmaid
+
+  if (get_free_vmrg_area(caller, vmaid, size, &rgnode) == 0)
+  {
+    caller->mm->symrgtbl[rgid].rg_start = rgnode.rg_start;
+    caller->mm->symrgtbl[rgid].rg_end = rgnode.rg_end;
  
-   /* TODO: commit the vmaid */
-   // rgnode.vmaid
-   rgnode.vmaid = vmaid;
- 
-   if (get_free_vmrg_area(caller, vmaid, size, &rgnode) == 0)
-   {
-     caller->mm->symrgtbl[rgid].rg_start = rgnode.rg_start;
-     caller->mm->symrgtbl[rgid].rg_end = rgnode.rg_end;
- 
-     *alloc_addr = rgnode.rg_start;
-     // DEBUG:
-     //printf("get free area success\n");
- 
-     return 0;
-   }
- 
-   /* TODO get_free_vmrg_area FAILED handle the region management (Fig.6)*/
-   else
-   {
-     // DEBUG:
-     //  printf("cannot get free area\n");
-     struct vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
-     //printf("Hello");
-     //printf("SBRK: %d  END: %d", cur_vma->sbrk, cur_vma->vm_end);
- 
-     // @Nhan: Be careful when using aligned size (inc_sz) to extend sbrk.
-     // Since inc_sz is rounded up to the nearest page size, sbrk may hit vm_end
-     // sooner than expected, even if there’s still technically some space left.
-     // This isn't wrong, but it wastes memory — and over time, we might run out of it.
-     // So in practice, aligning everything may not be the best idea.
- 
-     int inc_sz = PAGING_PAGE_ALIGNSZ(size);
- 
-     if (cur_vma->vm_end - cur_vma->sbrk + 1 < size)
-     {
-       //int old_sbrk = cur_vma->sbrk;
-       struct sc_regs regs;
-       regs.a1 = SYSMEM_INC_OP;
-       regs.a2 = vmaid;
-       regs.a3 = inc_sz;
- 
-       syscall(caller, 17, &regs);
-       // alloc_addr = &old_sbrk;
-       // if (get_free_vmrg_area(caller, vmaid, size, &rgnode) != 0)
-       // {
-       //   pthread_mutex_unlock(&mmvm_lock);
-       //   return -1;
-       // }
-       // DEBUG:
-       // printf("print pgd in alloc 3: ");
-       // print_pgtbl(caller, 0, -1); // In page table
- 
-       rgnode = *get_vm_area_node_at_brk(caller, vmaid, size, size);
-       caller->mm->symrgtbl[rgid].rg_start = rgnode.rg_start;
-       caller->mm->symrgtbl[rgid].rg_end = rgnode.rg_end;
- 
-       *alloc_addr = rgnode.rg_start;
-       // printf("addr in alloc 2: ");
-       // printf("addr: %08x\n", *alloc_addr);
-       cur_vma->sbrk = rgnode.rg_end;
-       //inc_limit_ret = cur_vma->sbrk;
-       return 0;
-     }
- 
-     // printf("addr in alloc 1: ");
-     // printf("addr: %08x\n", *alloc_addr);
-     rgnode = *get_vm_area_node_at_brk(caller, vmaid, size, size); 
-     caller->mm->symrgtbl[rgid].rg_start = rgnode.rg_start;
-     caller->mm->symrgtbl[rgid].rg_end = rgnode.rg_end;
- 
-     *alloc_addr = rgnode.rg_start;
-     // printf("addr in alloc 2: ");
-     // printf("addr: %08x\n", *alloc_addr);
-     cur_vma->sbrk = rgnode.rg_end;
-     //inc_limit_ret = cur_vma->sbrk;
-     // DEBUG:
-     // printf("print pgd in alloc 4: ");
-     // print_pgtbl(caller, 0, -1); // In page table
-   }
- 
-   return 0;
+    *alloc_addr = rgnode.rg_start;
+     pthread_mutex_unlock(&mmvm_lock);
+    return 0;
+  }
+  struct vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
+  int inc_sz = PAGING_PAGE_ALIGNSZ(size);   
+  int old_sbrk = cur_vma->sbrk;
+  //int new_sbrk = old_sbrk + inc_sz;
+  
+  struct sc_regs regs;
+  regs.a1 = SYSMEM_INC_OP;
+  regs.a2 = vmaid;
+  regs.a3 = inc_sz;
+  regs.orig_ax=17;
+  if(syscall(caller,regs.orig_ax, &regs)<0) {
+    return -1; 
+  }
+  
+  
+  caller->mm->symrgtbl[rgid].rg_start = old_sbrk;
+  caller->mm->symrgtbl[rgid].rg_end = old_sbrk+size;
+
+  
+  *alloc_addr = old_sbrk;
+  cur_vma->sbrk = cur_vma->vm_end;
+  if (old_sbrk+size < cur_vma->vm_end)
+  {
+    struct vm_rg_struct *rg_free = malloc(sizeof(struct vm_rg_struct));
+    rg_free->rg_start = old_sbrk+size;
+    rg_free->rg_end = cur_vma->vm_end;
+    enlist_vm_freerg_list(caller->mm, rg_free);
+  }
+  return 0;
  }
  
  /*__free - remove a region memory
@@ -199,59 +159,45 @@
   */
  int liballoc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
  {
-   // DEBUG:
-   // printf("first print: ");
-   // print_pgtbl(proc, 0, -1);
- 
+
+  pthread_mutex_lock(&mmvm_lock);
+
    int addr = 0;
    int freerg_id = -1;    // the region id that has not been in logical address, so also not point to a frame
-   //int freerg_vmaid = -1; //  we also need to update freerg_vmaid to use _alloc()
+  
    if (proc->mm->symrgtbl[reg_index].rg_start == -1 &&
        proc->mm->symrgtbl[reg_index].rg_end == -1)
    {
-     // printf("use reg_index\n"); DEBUG
+    
      freerg_id = reg_index;
-     //freerg_vmaid = proc->mm->symrgtbl[reg_index].vmaid;
+     
    }
    else
    {
-     for (int i = 0; i < PAGING_MAX_SYMTBL_SZ; i++)
-     {
-       if (proc->mm->symrgtbl[i].rg_start == -1 &&
-           proc->mm->symrgtbl[i].rg_end == -1)
-       {
-         freerg_id = i;
-         //freerg_vmaid = proc->mm->symrgtbl[i].vmaid;
-         break;
-       }
-     }
+    return -1;
+    pthread_mutex_unlock(&mmvm_lock);
    }
  
-   if (freerg_id == -1)
-     return -1;
-   // DEBUG:
-   // printf("2 print: ");
-   // print_pgtbl(proc, 0, -1); // In page table
-   // printf("addr in liballoc 1: %08x\n", addr);
+ 
+
    if (__alloc(proc, 0, freerg_id, size, &addr) == 0)
    {
-     // proc->regs[reg_index] = addr;
-     proc->regs[freerg_id] = addr;
+    
+     proc->regs[reg_index] = addr;
    }
-   // printf("addr in liballoc 2: %08x\n", addr);
-   // DEBUG:
-   // printf("3 print: ");
-   // print_pgtbl(proc, 0, -1); // In page table
+
  #ifdef IODUMP
    printf("===== PHYSICAL MEMORY AFTER ALLOCATION =====\n");
    printf("PID=%d - Region=%d - Address=%08x - Size=%u byte\n", proc->pid, freerg_id, addr, size);
  #ifdef PAGETBL_DUMP
  
-   print_pgtbl(proc, 0, -1); // In page table
+   print_pgtbl(proc, 0, -1); 
  #endif
-   // MEMPHY_dump(proc->mram); // In nội dung RAM
+ 
    printf("================================================================\n");
  #endif
+    pthread_mutex_unlock(&mmvm_lock);
+ 
    return 0;
  }
  
@@ -261,7 +207,9 @@
   *@reg_index: memory region ID (used to identify variable in symbole table)
   */
  int libfree(struct pcb_t *proc, uint32_t reg_index)
- {
+ { 
+      
+    pthread_mutex_lock(&mmvm_lock);
    uint32_t region_id = -1;
    //uint32_t region_vmaid = -1; //  we also need to get region_vmaid to use _free()
    if (reg_index >= PAGING_MAX_SYMTBL_SZ)
@@ -308,8 +256,11 @@
  #ifdef PAGETBL_DUMP
      print_pgtbl(proc, 0, -1);
  #endif
+    printf("================================================================\n");
+
      // MEMPHY_dump(proc->mram);
  #endif
+ pthread_mutex_unlock(&mmvm_lock);
    }
  
    return result;
@@ -323,70 +274,57 @@
   *
   */
  int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
- {
-   // first of all we need to check the page present or not
-   uint32_t pte = mm->pgd[pgn];
-   if (PAGING_PAGE_PRESENT(pte))
-   {
-     *fpn = PAGING_FPN(pte);
-   }
-   else
-   {
-     // it means the page  dont have the physical memory in ram
-     //  I consider two cases happen, first the physcical memory had not been allocated yet.
-     //  So we need to check if ram have enough space for allocation, we will do it
-     //  othrerwise if ram have no space, we will SWAP for swap in and swap out
-     int vicpgn, vicfpn, swpfpn;
-     int tgtfpn = PAGING_PTE_SWP(pte);
-     int freefpn;
-     if (MEMPHY_get_freefp(caller->mram, &freefpn) != -1)
-     {
-       __swap_cp_page(caller->active_mswp, tgtfpn, caller->mram, freefpn);
-       pte_set_fpn(&mm->pgd[pgn], freefpn);
-       // pte_set_present(&mm->pgd[pgn]);
-       *fpn = freefpn;
-       enlist_pgn_node(&mm->fifo_pgn, pgn); // 💥 add to FIFO after allocation
-       printf("Have enough space for allocation!");
-     }
-     // this means when we dont have enough memory for allocation!
-     else
-     {
-       // first of all we need to find where exactly our pages is
-       // We know that in the structure of pte when swapped = 1
-       // we have the swptype and swpoffset
-       // which actualy means swptype is the region, and swpoffset is actual index in that region
-       // because the swap ad ram have same struct memphy ....
-       if (find_victim_page(caller->mm, &vicpgn) < 0)
-       {
-         return -1;
-       }
- 
-       vicfpn = PAGING_FPN(mm->pgd[vicpgn]);
-       if (MEMPHY_get_freefp(caller->active_mswp, &swpfpn) < 0)
-       {
-         printf("There is no space in swap\n"); // for debuging
-         return -1;
-       }
-       // swap the victim fpn to the swp at the location swpfpn
-       __swap_cp_page(caller->mram, vicfpn, caller->active_mswp, swpfpn);
-       __swap_cp_page(caller->active_mswp, tgtfpn, caller->mram, vicfpn);
-       
-       // after swap we need to modify the pte to let the page table know that the vicfpn is not actualy in ram
-       //  but it has been stored in swp
-       // about the swptype i could be wrong, the right way is determine exactly what page number of swpfpn;
-       // but im too lazy for figuring out this :)).
-       pte_set_swap(&mm->pgd[vicpgn], 0, swpfpn);
-       // pte_clear_present(&mm->pgd[vicpgn]);
- 
-       pte_set_fpn(&mm->pgd[pgn], vicfpn);
-       // pte_set_present(&mm->pgd[pgn]);
-       *fpn = vicfpn;
-       enlist_pgn_node(&mm->fifo_pgn, pgn); // 💥 add to FIFO after swap-in
-     }
-   }
- 
-   return 0;
- }
+{
+  uint32_t pte = mm->pgd[pgn];
+  
+  if (!PAGING_PAGE_PRESENT(pte))
+  { /* Page is not online, make it actively living */
+    int vicpgn, swpfpn; 
+    int vicfpn, swp_id;
+    //uint32_t vicpte;
+
+    int tgtfpn = PAGING_PTE_SWP(pte);//the target frame storing our variable
+    
+    int typ_swp=PAGING_PTE_SWPTYP(pte);
+    if(caller->mswp[typ_swp]->maxsz<256) typ_swp=caller->active_mswp_id;
+    /* TODO: Play with your paging theory here */
+    /* Find victim page */
+    if(find_victim_page(caller->mm, &vicpgn)!=0) {
+      return -1;
+    }
+    /* Get free frame in MEMSWP */
+    if(SWAPMEM_try_get_freefp(caller, &swpfpn,&swp_id)!=0) {
+      return -1;
+    }
+
+    //if(MEMPHY_get_freefp(caller->active_mswp, &swpfpn)!=0) return -1;
+
+    /* TODO: Implement swap frame from MEMRAM to MEMSWP and vice versa*/
+    vicfpn = PAGING_PTE_FPN(mm->pgd[vicpgn]);
+    
+    struct sc_regs regs;
+    regs.a1 = SYSMEM_SWP_OP;
+    regs.a2 = vicfpn;
+    regs.a3 = swpfpn;
+    //regs.a4= 0;
+    //regs.a5=swp_id;
+    //regs.orig_ax=17;
+    //if(PAGING_PAGE_DIRTY(mm->pgd[vicpgn]))
+      syscall(caller,regs.orig_ax, &regs);
+    //__swap_cp_page(caller->mram, vicfpn, caller->mswp[swp_id], swpfpn);
+    regs.a2 = tgtfpn;
+    regs.a3 = vicfpn;
+    //regs.a4= 1;
+    //regs.a5=typ_swp;
+    syscall(caller,regs.orig_ax, &regs);
+    //__swap_cp_page(caller->mswp[typ_swp], tgtfpn, caller->mram, vicfpn);
+    pte_set_swap(&mm->pgd[vicpgn], swp_id, swpfpn);
+    pte_set_fpn(&mm->pgd[pgn], vicfpn);
+    enlist_pgn_node(&caller->mm->fifo_pgn,pgn);
+  }
+  *fpn = PAGING_FPN(mm->pgd[pgn]);
+  return 0;
+}
  
  /*pg_getval - read value at given offset
   *@mm: memory region
@@ -409,7 +347,7 @@
     *  MEMPHY READ
     *  SYSCALL 17 sys_memmap with SYSMEM_IO_READ
     */
-   int phyaddr = (fpn * PAGE_SIZE) + off;
+  uint32_t phyaddr=(fpn << PAGING_ADDR_FPN_LOBIT) | off;
    struct sc_regs regs;
    regs.a1 = SYSMEM_IO_READ;
    regs.a2 = phyaddr;
@@ -444,18 +382,18 @@
     *  MEMPHY WRITE
     *  SYSCALL 17 sys_memmap with SYSMEM_IO_WRITE
     */
-   int phyaddr = (fpn * PAGE_SIZE) + off;
-   struct sc_regs regs;
-   regs.a1 = SYSMEM_IO_WRITE;
-   regs.a2 = phyaddr;
-   regs.a3 = value;
-   syscall(caller, 17, &regs);
-   /* SYSCALL 17 sys_memmap */
+   SETBIT(mm->pgd[pgn], PAGING_PTE_DIRTY_MASK);
+  struct sc_regs regs;
+  uint32_t addr_phy=(fpn << (PAGING_ADDR_FPN_LOBIT)) | off;
+  regs.a1 = SYSMEM_IO_WRITE;
+  regs.a2= addr_phy;
+  regs.a3 = value;
+  regs.orig_ax=17;
+  if(syscall(caller,regs.orig_ax, &regs)<0) return -1;
+  return 0;
+   
  
-   // Update data
-   // data = (BYTE)
- 
-   return 0;
+   
  }
  
  /*__read - read value in region memory
@@ -486,6 +424,7 @@
      uint32_t offset,    // Source address = [source] + [offset]
      uint32_t *destination)
  {
+  pthread_mutex_lock(&mmvm_lock);
    BYTE data;
    int val = __read(proc, 0, source, offset, &data);
  
@@ -504,8 +443,9 @@
    printf("===== PHYSICAL MEMORY END-DUMP =====\n");
    printf("================================================================\n");
  #endif
- 
-   return val;
+    pthread_mutex_unlock(&mmvm_lock);
+
+    return val;
  }
  
  /*__write - write a region memory
@@ -536,9 +476,11 @@
      uint32_t destination, // Index of destination register
      uint32_t offset)
  {
+   pthread_mutex_lock(&mmvm_lock);  
    int val = __write(proc, 0, destination, offset, data);
    if (val == -1)
    {
+     pthread_mutex_unlock(&mmvm_lock);
      return -1;
    }
  #ifdef IODUMP
@@ -547,14 +489,14 @@
  #ifdef PAGETBL_DUMP
    print_pgtbl(proc, 0, -1); // print max TBL
  #endif
-   // MEMPHY_dump(proc->mram);
+    MEMPHY_dump(proc->mram);
    printf("===== PHYSICAL MEMORY DUMP =====\n");
    MEMPHY_dump(proc->mram); // Bỏ comment dòng này
    printf("===== PHYSICAL MEMORY END-DUMP =====\n");
    printf("================================================================\n");
  #endif
- 
-   return __write(proc, 0, destination, offset, data);
+    pthread_mutex_unlock(&mmvm_lock);
+   return val;
    printf("================================================================\n");
  }
  
