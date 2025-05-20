@@ -154,6 +154,7 @@ int MEMPHY_read(struct memphy_struct * mp, int addr, BYTE *value);
 int MEMPHY_write(struct memphy_struct * mp, int addr, BYTE data);
 int MEMPHY_dump(struct memphy_struct * mp);
 int init_memphy(struct memphy_struct *mp, int max_size, int randomflg);
+int SWAPMEM_try_get_freefp(struct pcb_t *proc, int *retfpn, int *mswp_id );
 
 /* print list */
 int print_list_fp(struct framephy_struct *fp);
