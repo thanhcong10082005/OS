@@ -284,38 +284,48 @@
   * @mm:     self mm
   * @caller: mm owner
   */
- int init_mm(struct mm_struct *mm, struct pcb_t *caller)
- {
-   struct vm_area_struct *vma0 = malloc(sizeof(struct vm_area_struct));
- 
-   mm->pgd = malloc(PAGING_MAX_PGN * sizeof(uint32_t));
- 
-   /* By default the owner comes with at least one vma */
-   vma0->vm_id = 0;
-   vma0->vm_start = 0;
-   vma0->vm_end = vma0->vm_start;
-   vma0->sbrk = vma0->vm_start;
-   struct vm_rg_struct *first_rg = init_vm_rg(vma0->vm_start, vma0->vm_end);
-   enlist_vm_rg_node(&vma0->vm_freerg_list, first_rg);
- 
-   /* TODO update VMA0 next */
-   vma0->vm_next = NULL;
- 
-   /* Point vma owner backward */
-   vma0->vm_mm = mm;
- 
-   /* TODO: update mmap */
-   mm->mmap = vma0;
- 
-   for (size_t i = 0; i < PAGING_MAX_SYMTBL_SZ; i++)
+int init_mm(struct mm_struct *mm, struct pcb_t *caller)
+{
+  struct vm_area_struct *vma0 = malloc(sizeof(struct vm_area_struct));
+
+  mm->pgd = malloc(PAGING_MAX_PGN * sizeof(uint32_t));
+
+  /* By default the owner comes with at least one vma */
+  vma0->vm_id = 0;
+  vma0->vm_start = 0;
+  vma0->vm_end = vma0->vm_start;
+  vma0->sbrk = vma0->vm_start;
+  struct vm_rg_struct *first_rg = init_vm_rg(vma0->vm_start, vma0->vm_end);
+  enlist_vm_rg_node(&vma0->vm_freerg_list, first_rg);
+
+  /* TODO update VMA0 next */
+  // vma0->next = ...
+  struct vm_area_struct *vma1 = malloc(sizeof(struct vm_area_struct));
+  vma1->vm_id = 1;
+  vma1->vm_start = 100000;  
+  vma1->vm_end = 108192  ;    
+  vma1->sbrk = vma1->vm_start;  
+  struct vm_rg_struct *data_rg = init_vm_rg(vma1->vm_start, vma1->vm_end);
+  enlist_vm_rg_node(&vma1->vm_freerg_list, data_rg);
+
+  vma1->vm_next = NULL;
+  vma1->vm_mm = mm;
+
+  vma0->vm_next = vma1;
+  /* Point vma owner backward */
+  vma0->vm_mm = mm; 
+
+  /* TODO: update mmap */
+  //mm->mmap = ...
+  mm->mmap=vma0;
+    for (size_t i = 0; i < PAGING_MAX_SYMTBL_SZ; i++)
    {
      mm->symrgtbl[i].rg_start = -1;
      mm->symrgtbl[i].rg_end = -1;
      mm->symrgtbl[i].rg_next = NULL;
    }
- 
-   return 0;
- }
+  return 0;
+}
  
  struct vm_rg_struct *init_vm_rg(int rg_start, int rg_end)
  {
@@ -459,6 +469,38 @@
    }
    return 0;
  }
- 
+ void dump_memory(struct mm_struct *mm) {
+  // In ra thông tin vùng heap
+  printf("===== Dumping memory regions =====\n");
+
+  struct vm_area_struct *vma = mm->mmap;
+  while (vma != NULL) {
+      printf("VMA ID: %ld\n", vma->vm_id);
+      printf("  Start Address: 0x%lx\n", vma->vm_start);
+      printf("  End Address: 0x%lx\n", vma->vm_end);
+      printf("  Break Address (sbrk): 0x%lx\n", vma->sbrk);
+      printf("-----------------------------------\n");
+
+      vma = vma->vm_next;  
+  }
+  
+  // In ra thông tin về vùng heap và data
+  printf("Heap and Data memory allocation:\n");
+  
+  struct vm_area_struct *current = mm->mmap;
+  while (current != NULL) {
+      
+      if (current->vm_id == 0) {
+          printf("Heap (vma0):\n");
+          printf("  Start: 0x%lx, End: 0x%lx\n", current->vm_start, current->vm_end);
+      } else if (current->vm_id == 1) {
+          printf("Data (vma1):\n");
+          printf("  Start: 0x%lx, End: 0x%lx\n", current->vm_start, current->vm_end);
+      }
+      current = current->vm_next;
+  }
+
+  printf("=====================================\n");
+}
  // #endif
  
