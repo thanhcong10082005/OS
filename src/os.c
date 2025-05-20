@@ -13,6 +13,7 @@
 static int time_slot;
 static int num_cpus;
 static int done = 0;
+static pthread_mutex_t done_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 #ifdef MM_PAGING
 static int memramsz;
@@ -57,9 +58,16 @@ static void * cpu_routine(void * args) {
 		 	* ready queue */
 			proc = get_proc();
 			if (proc == NULL) {
-                           next_slot(timer_id);
-                           continue; /* First load failed. skip dummy load */
-                        }
+				pthread_mutex_lock(&done_mutex);
+            	int should_exit = (done != 0);
+            	pthread_mutex_unlock(&done_mutex);
+				if (should_exit) {
+					printf("\tCPU %d stopped\n", id);
+					break;
+				}
+				next_slot(timer_id);
+				continue; /* First load failed. skip dummy load */
+             }
 		}else if (proc->pc == proc->code->size) {
 			/* The porcess has finish it job */
 			printf("\tCPU %d: Processed %2d has finished\n",
@@ -135,7 +143,11 @@ static void * ld_routine(void * args) {
 	}
 	free(ld_processes.path);
 	free(ld_processes.start_time);
-	done = 1;
+	// ADDED
+	pthread_mutex_lock(&done_mutex);
+    done = 1;
+    pthread_mutex_unlock(&done_mutex);
+	// ADDED
 	detach_event(timer_id);
 	pthread_exit(NULL);
 }
