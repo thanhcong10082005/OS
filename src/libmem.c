@@ -309,7 +309,7 @@
     //regs.a4= 0;
     //regs.a5=swp_id;
     //regs.orig_ax=17;
-    //if(PAGING_PAGE_DIRTY(mm->pgd[vicpgn]))
+    if(PAGING_PAGE_DIRTY(mm->pgd[vicpgn]))
       syscall(caller,regs.orig_ax, &regs);
     //__swap_cp_page(caller->mram, vicfpn, caller->mswp[swp_id], swpfpn);
     regs.a2 = tgtfpn;
