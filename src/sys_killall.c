@@ -25,7 +25,7 @@ int __sys_killall(struct pcb_t *caller, struct sc_regs* regs)
 {
     char proc_name[100];
     uint32_t data;
-    uint32_t region_id = regs->a1; // Giữ lại region_id
+    uint32_t region_id = regs->a1;
 
     /* Đọc tên tiến trình từ vùng bộ nhớ */
     int i = 0;
@@ -35,7 +35,6 @@ int __sys_killall(struct pcb_t *caller, struct sc_regs* regs)
         read_status = libread(caller, region_id, i, &data);
 
         if (read_status != 0) { // Kiểm tra return value của libread
-            // printf("Error: Failed to read from memory region %d at offset %d\n", region_id, i); // Có thể bỏ comment để debug
             proc_name[i] = '\0'; // Kết thúc chuỗi nếu lỗi
             break; // Thoát vòng lặp
         }
@@ -50,37 +49,12 @@ int __sys_killall(struct pcb_t *caller, struct sc_regs* regs)
     // Đảm bảo chuỗi luôn kết thúc bằng null, ngay cả khi đọc hết buffer
     proc_name[i] = '\0';
 
-    // Sửa: In ra region_id thay vì region_base
     printf("The process name retrieved from memregionid %d is \"%s\"\n", region_id, proc_name);
 
-    // char proc_name[100];
-    // uint32_t data;
-    // uint32_t memrg = regs->a1;
-    // int i = 0;
-    // do {
-    //     // Sửa: Dùng memrg (region ID)
-    //     if (libread(caller, memrg, i, &data) != 0) {
-    //         printf("Error: Failed to read from memory region %d at offset %d\n", memrg, i);
-    //          proc_name[i] = '\0';
-    //          return -1;
-    //     }
-    //     proc_name[i] = (BYTE)data;
-    //     i++;
-    // } while (data != 0 && i < 100);
-
-    // // Đảm bảo chuỗi kết thúc đúng cách
-    // // Nếu vòng lặp dừng do data=0, i đã tăng thêm 1, nên vị trí cuối là i-1
-    // // Nếu vòng lặp dừng do i=100, vị trí cuối là 99 (i-1)
-    // if (i > 0) {
-    //      proc_name[i-1] = '\0';
-    // } else {
-    //      proc_name[0] = '\0'; // Trường hợp không đọc được gì
-    // }
-    // printf("The process name retrieved from memregionid %d is \"%s\"\n", memrg, proc_name);
 
     pthread_mutex_lock(&queue_lock); // Khóa các hàng đợi
 
-    // --- SỬA LỖI TRUY CẬP HÀNG ĐỢI và GIẢI PHÓNG ---
+    // --- TRUY CẬP HÀNG ĐỢI và GIẢI PHÓNG ---
     if (running_list.size > 0)
     {
         int idx = 0;
@@ -106,7 +80,7 @@ int __sys_killall(struct pcb_t *caller, struct sc_regs* regs)
 
                     // *** Gọi hàm giải phóng frame vật lý TRƯỚC khi free(p) ***
                     free_pcb_memph(p);
-                    // *** LƯU Ý: Các tài nguyên khác (mm, pgd) CẦN được giải phóng ở nơi khác (ví dụ trong free_pcb_memph)! ***
+                    // *** Các tài nguyên khác (mm, pgd) CẦN được giải phóng ở nơi khác (ví dụ trong free_pcb_memph)! ***
                     free(p); // Giải phóng PCB
 
                     // Không tăng idx vì phần tử tiếp theo đã dịch lên
@@ -141,9 +115,9 @@ int __sys_killall(struct pcb_t *caller, struct sc_regs* regs)
 
                     // Không kill caller ở đây vì nó đang chạy syscall
                     if (p != caller) {
-                         // *** SỬA LỖI: Gọi hàm giải phóng frame vật lý TRƯỚC khi free(p) ***
+                         // *** Gọi hàm giải phóng frame vật lý TRƯỚC khi free(p) ***
                          free_pcb_memph(p);
-                         // *** LƯU Ý: Các tài nguyên khác (mm, pgd) CẦN được giải phóng ở nơi khác! ***
+                         // *** Các tài nguyên khác (mm, pgd) CẦN được giải phóng ở nơi khác! ***
                          free(p); // Giải phóng PCB
                     }
                     // Không tăng idx
