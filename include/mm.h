@@ -24,10 +24,7 @@
 
 /* PTE BIT PRESENT */
 #define PAGING_PTE_SET_PRESENT(pte) (pte=pte|PAGING_PTE_PRESENT_MASK)
-//#define PAGING_PAGE_PRESENT(pte) ((pte & PAGING_PTE_PRESENT_MASK) && !(pte & PAGING_PTE_SWAPPED_MASK))
 #define PAGING_PAGE_PRESENT(pte) (pte&PAGING_PTE_PRESENT_MASK)
-#define PAGING_PAGE_SWAP(pte) (pte&PAGING_PTE_SWAPPED_MASK)
-#define PAGING_PAGE_DIRTY(pte) (pte&PAGING_PTE_DIRTY_MASK)
 
 /* USRNUM */
 #define PAGING_PTE_USRNUM_LOBIT 15
@@ -53,8 +50,8 @@
 #define PAGING_PTE_PGN(pte)   GETVAL(pte,PAGING_PGN_MASK,PAGING_ADDR_PGN_LOBIT)
 #define PAGING_PTE_FPN(pte)   GETVAL(pte,PAGING_PTE_FPN_MASK,PAGING_PTE_FPN_LOBIT)
 #define PAGING_PTE_SWP(pte)   GETVAL(pte,PAGING_PTE_SWPOFF_MASK,PAGING_SWPFPN_OFFSET)
+/* Extract SWAP TYPE */ // add define macro for extracting 4 bits swptype
 #define PAGING_PTE_SWPTYP(pte) GETVAL(pte, PAGING_PTE_SWPTYP_MASK, PAGING_PTE_SWPTYP_LOBIT)
-
 
 /* OFFSET */
 #define PAGING_ADDR_OFFST_LOBIT 0
@@ -100,8 +97,8 @@
 
 /* Memory range operator */
 /* TODO implement the INCLUDE and OVERLAP checking mechanism */
-#define INCLUDE(x1,x2,y1,y2)  ((x1) <= (y1) && (x2) >= (y2))
-#define OVERLAP(x1,x2,y1,y2) (!((x2) <= (y1) || (x1) >= (y2)))
+#define INCLUDE(x1,x2,y1,y2) (0)
+#define OVERLAP(x1,x2,y1,y2) (0)
 
 /* VM region prototypes */
 struct vm_rg_struct * init_vm_rg(int rg_start, int rg_endi);
@@ -145,15 +142,13 @@ int pgwrite(
 struct vm_rg_struct * get_symrg_byid(struct mm_struct* mm, int rgid);
 int validate_overlap_vm_area(struct pcb_t *caller, int vmaid, int vmastart, int vmaend);
 int get_free_vmrg_area(struct pcb_t *caller, int vmaid, int size, struct vm_rg_struct *newrg);
+struct vm_rg_struct *get_vm_area_node_at_brk(struct pcb_t *caller, int vmaid, int size, int alignedsz);
 int inc_vma_limit(struct pcb_t *caller, int vmaid, int inc_sz);
 int find_victim_page(struct mm_struct* mm, int *pgn);
 struct vm_area_struct *get_vma_by_num(struct mm_struct *mm, int vmaid);
 
 /* MEM/PHY protypes */
 int MEMPHY_get_freefp(struct memphy_struct *mp, int *fpn);
-//
-int SWAPMEM_try_get_freefp(struct pcb_t *proc, int *retfpn, int *mswp_id );
-//
 int MEMPHY_put_freefp(struct memphy_struct *mp, int fpn);
 int MEMPHY_read(struct memphy_struct * mp, int addr, BYTE *value);
 int MEMPHY_write(struct memphy_struct * mp, int addr, BYTE data);
@@ -168,6 +163,4 @@ int print_list_vma(struct vm_area_struct *rg);
 
 int print_list_pgn(struct pgn_t *ip);
 int print_pgtbl(struct pcb_t *ip, uint32_t start, uint32_t end);
-void dump_memory(struct mm_struct *mm) ;
-int print_pgt(struct pcb_t *caller);
 #endif
