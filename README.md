@@ -1,3 +1,8 @@
+Lưu ý quan trọng:  
+  Để chạy được các file test sched, sched_0, sched_1 của scheduler thì phải vào include/os-cfg.h và uncomment 3 dòng sau:  
+// #define MM_FIXED_MEMSZ  
+// #define VMDBG 1  
+// #define MMDBG 1  
 Các Bước Làm Việc :
 1. Lấy Code về máy :  
   > mở Terminal/Git Bash, vào thư mục muốn lưu code, và chạy:  
